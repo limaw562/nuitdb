@@ -1,92 +1,48 @@
-# CircleCI 配置文件
-# 将您的 GitHub Actions 工作流转换为 CircleCI
 version: 2.1
 
-# Orbs 是可重用的 CircleCI 配置包。
-# 我们使用 path-filtering orb 来实现基于文件路径变更的条件执行，
-# 这与 GitHub Actions 中的 'paths' 功能类似。
 orbs:
-  path-filtering: circleci/path-filtering@1.0.1
+  win: circleci/windows@5.0 # 使用 Windows orb
+  python: circleci/python@2.0 # 使用 Python orb
 
-# 定义一个可重用的 Windows 执行器
-executors:
-  windows-executor:
-    machine:
-      # 使用一个现代的、包含图形界面和常用软件的 Windows 镜像
-      image: windows-server-2022-gui:current
-    # 将默认 shell 设置为 PowerShell
-    shell: powershell.exe -ExecutionPolicy Bypass
-
-# 定义流水线参数，这些参数将由 path-filtering orb 设置
-parameters:
-  run-build-job:
-    type: boolean
-    default: false
-
-# 定义工作 (jobs)
 jobs:
-  # 此 job 在 Linux 环境中检查文件变更，以确保 Orb 的兼容性。
-  filter-changes:
-    docker:
-      - image: cimg/base:stable
-    steps:
-      - checkout
-      - path-filtering/filter:
-          base-revision: main
-          # 定义路径匹配规则。
-          # 如果 'app.exe' 或 'icon.ico' 或任何 .py 文件发生变更，则将 'run-build-job' 参数设置为 true。
-          mapping: |
-            app.exe run-build-job true
-            icon.ico run-build-job true
-            activation_ui.py run-build-job true
-
-  # 此 job 使用 Nuitka 构建应用程序
   build:
-    executor: windows-executor
+    executor: win/default # 使用 Windows orb 提供的默认 executor
     steps:
-      - checkout
+      - checkout # 对应 actions/checkout@v4
+
+      - python/install-packages: # 对应 actions/setup-python@v4 和 Install dependencies
+          pkg-manager: pip
+          # 如果有 requirements.txt 文件，可以省略 args，它会自动查找
+          # 否则，需要在这里指定要安装的包
+          # 例如：args: "nuitka==2.7.10 pyside6==6.9.1 requests"
+          # 或者，为了清晰，可以拆分成多个 run 步骤
       - run:
-          name: "安装 Python 3.12.10"
-          # 使用 Chocolatey (Windows 的包管理器) 来安装指定的 Python 版本。
-          # -y 参数会自动确认所有提示。
+          name: Install Nuitka and other dependencies
           command: |
-            choco install python --version 3.12.10 -y
-            # 为了确保后续步骤能找到 Python，我们将它添加到当前会话的 PATH 环境变量中。
-            $env:Path = "C:\Python312;C:\Python312\Scripts;" + $env:Path
-            echo "Python version:"
-            python --version
-            echo "pip version:"
-            pip --version
-      - run:
-          name: "安装依赖"
-          command: |
-            python -m pip install --upgrade pip
+            pip install --upgrade pip
             pip install nuitka==2.7.10 pyside6==6.9.1 requests
+
       - run:
-          name: "使用 Nuitka 构建"
-          # 此命令直接从 GitHub Actions 工作流中复制而来。
-          # 同时保留了 PowerShell 的错误检查机制。
+          name: Build with Nuitka
+          # 注意：在 Windows 环境下，PowerShell 是默认 shell，可以直接使用 PowerShell 语法
+          # 如果需要使用 cmd.exe 或 bash.exe，可以在 run 步骤中指定 shell
           command: |
             nuitka --standalone --onefile --enable-plugin=pyside6 --windows-console-mode=disable --windows-icon-from-ico=icon.ico --include-data-files="app.exe=app.exe" --include-data-files="icon.ico=icon.ico" --lto=yes --assume-yes-for-downloads activation_ui.py
-            if ($LASTEXITCODE -ne 0) {
-              Write-Error "Nuitka build failed."
-              exit 1
-            }
-      - store_artifacts:
-          name: "上传构建产物"
-          path: activation_ui.exe
-          destination: activation_ui.exe
+            # 在 PowerShell 中，检查上一个命令的退出码可以使用 $LASTEXITCODE
+            if ($LASTEXITCODE -ne 0) { exit 1 }
 
-# 定义工作流 (workflows)
+      - store_artifacts: # 对应 actions/upload-artifact@v4
+          path: activation_ui.exe
+          destination: activation_ui # Artifacts 的名称
+
 workflows:
-  build-on-change:
+  version: 2
+  build_workflow:
     jobs:
-      - filter-changes:
-          filters:
-            branches:
-              only: main
       - build:
-          requires:
-            - filter-changes
-          # 仅当 'run-build-job' 参数为 true 时才运行此 job
-          when: << pipeline.parameters.run-build-job >>
+          filters: # 对应 on: push 和 on: pull_request 的 branches 和 paths 过滤
+            branches:
+              only:
+                - main
+            paths:
+              - "app.exe" # 注意：CircleCI 的路径过滤可能不如 GitHub Actions 灵活，可能需要调整
