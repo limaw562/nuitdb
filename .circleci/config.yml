@@ -39,10 +39,14 @@ workflows:
   version: 2
   build_workflow:
     jobs:
-      - build:
-          filters: # 对应 on: push 和 on: pull_request 的 branches 和 paths 过滤
+      - build: # 修正后的语法：作业名称作为键，filters 作为其值
+          filters:
             branches:
               only:
                 - main
             paths:
-              - "app.exe" # 注意：CircleCI 的路径过滤可能不如 GitHub Actions 灵活，可能需要调整
+              # 注意：CircleCI 的路径过滤可能不如 GitHub Actions 灵活，可能需要调整
+              # 对于 Windows 路径，可能需要使用正斜杠 '/' 而不是反斜杠 '\'
+              # 并且，如果 app.exe 是一个编译后的文件，通常不会作为触发器路径
+              # 触发器路径通常是源代码文件，例如 .py 文件
+              - "app.exe"
