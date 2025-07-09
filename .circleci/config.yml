@@ -25,9 +25,10 @@ parameters:
 
 # 定义工作 (jobs)
 jobs:
-  # 此 job 检查文件变更并设置 'run-build-job' 流水线参数
+  # 此 job 在 Linux 环境中检查文件变更，以确保 Orb 的兼容性。
   filter-changes:
-    executor: windows-executor
+    docker:
+      - image: cimg/base:stable
     steps:
       - checkout
       - path-filtering/filter:
