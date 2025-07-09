@@ -1,50 +1,93 @@
+# CircleCI 配置文件
+# 将您的 GitHub Actions 工作流转换为 CircleCI
 version: 2.1
 
+# Orbs 是可重用的 CircleCI 配置包。
+# 我们使用 path-filtering orb 来实现基于文件路径变更的条件执行，
+# 这与 GitHub Actions 中的 'paths' 功能类似。
 orbs:
-  python: circleci/python@2.0.0 # 使用 CircleCI Python Orb
-  windows: circleci/windows@5.0 # 使用 CircleCI Windows Orb
+  path-filtering: circleci/path-filtering@1.0.0
 
+# 定义一个可重用的 Windows 执行器
+executors:
+  windows-executor:
+    machine:
+      # 使用一个现代的、包含图形界面和常用软件的 Windows 镜像
+      image: windows-server-2022-gui:current
+    # 将默认 shell 设置为 PowerShell
+    shell: powershell.exe -ExecutionPolicy Bypass
+
+# 定义流水线参数，这些参数将由 path-filtering orb 设置
+parameters:
+  run-build-job:
+    type: boolean
+    default: false
+
+# 定义工作 (jobs)
 jobs:
-  build:
-    executor: windows/default # 使用 Windows Orb 提供的默认 executor
+  # 此 job 检查文件变更并设置 'run-build-job' 流水线参数
+  filter-changes:
+    executor: windows-executor
     steps:
       - checkout
+      - path-filtering/filter:
+          base-revision: main
+          # 定义路径匹配规则。
+          # 如果 'app.exe' 或 'icon.ico' 或任何 .py 文件发生变更，则将 'run-build-job' 参数设置为 true。
+          mapping: |
+            app.exe run-build-job true
+            icon.ico run-build-job true
+            activation_ui.py run-build-job true
 
+  # 此 job 使用 Nuitka 构建应用程序
+  build:
+    executor: windows-executor
+    steps:
+      - checkout
       - run:
-          name: Set up Python
+          name: "安装 Python 3.12.10"
+          # 使用 Chocolatey (Windows 的包管理器) 来安装指定的 Python 版本。
+          # -y 参数会自动确认所有提示。
           command: |
-            # Windows Orb 应该已经设置了 Python，这里可以根据需要调整版本
-            # 例如，如果您需要特定版本的 Python，可以使用 pyenv 或 Chocolatey 安装
-            # 这里假设默认的 Python 环境满足要求
+            choco install python --version 3.12.10 -y
+            # 为了确保后续步骤能找到 Python，我们将它添加到当前会话的 PATH 环境变量中。
+            $env:Path = "C:\Python312;C:\Python312\Scripts;" + $env:Path
+            echo "Python version:"
             python --version
-
+            echo "pip version:"
+            pip --version
       - run:
-          name: Install dependencies
+          name: "安装依赖"
           command: |
             python -m pip install --upgrade pip
             pip install nuitka==2.7.10 pyside6==6.9.1 requests
-
       - run:
-          name: Build with Nuitka
+          name: "使用 Nuitka 构建"
+          # 此命令直接从 GitHub Actions 工作流中复制而来。
+          # 同时保留了 PowerShell 的错误检查机制。
           command: |
             nuitka --standalone --onefile --enable-plugin=pyside6 --windows-console-mode=disable --windows-icon-from-ico=icon.ico --include-data-files="app.exe=app.exe" --include-data-files="icon.ico=icon.ico" --lto=yes --assume-yes-for-downloads activation_ui.py
-            # 在 PowerShell 中，可以使用 $LASTEXITCODE 来检查上一个命令的退出码
-            if ($LASTEXITCODE -ne 0) { exit 1 }
-
+            if ($LASTEXITCODE -ne 0) {
+              Write-Error "Nuitka build failed."
+              exit 1
+            }
       - store_artifacts:
-          name: Upload activation_ui.exe
-          path: activation_ui.exe # Nuitka 生成的可执行文件通常在当前目录或 Nuitka 默认的输出目录
+          name: "上传构建产物"
+          path: activation_ui.exe
+          destination: activation_ui.exe
 
+# 定义工作流 (workflows)
 workflows:
-  version: 2
-  build_and_deploy:
+  build-on-change:
+    # 仅在 git push 时运行此工作流
+    when: << pipeline.git.branch >>
     jobs:
-      - build:
+      - filter-changes:
           filters:
             branches:
-              only:
-                - main
-            paths:
-              - 'app.exe' # 仅当 app.exe 路径有变化时触发
-              - 'icon.ico' # 如果 icon.ico 也是触发条件，也需要包含
-              - 'activation_ui.py' # Nuitka 编译的源文件也应该作为触发条件
+              only: main
+      - build:
+          requires:
+            - filter-changes
+          # 仅当 'run-build-job' 参数为 true 时才运行此 job
+          when: << pipeline.parameters.run-build-job >>
