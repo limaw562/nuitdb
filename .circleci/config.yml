@@ -6,7 +6,7 @@ version: 2.1
 # 我们使用 path-filtering orb 来实现基于文件路径变更的条件执行，
 # 这与 GitHub Actions 中的 'paths' 功能类似。
 orbs:
-  path-filtering: circleci/path-filtering@1.0.0
+  path-filtering: circleci/path-filtering@1.0.1
 
 # 定义一个可重用的 Windows 执行器
 executors:
@@ -79,8 +79,6 @@ jobs:
 # 定义工作流 (workflows)
 workflows:
   build-on-change:
-    # 仅在 git push 时运行此工作流
-    when: << pipeline.git.branch >>
     jobs:
       - filter-changes:
           filters:
