@@ -2,7 +2,7 @@ version: 2.1
 
 orbs:
   win: circleci/windows@5.0 # 使用 Windows orb
-  python: circleci/python@2.0 # 使用 Python orb
+  # python: circleci/python@2.0 # <--- 移除 python orb 的引用，因为我们不再使用它的 install-packages
 
 jobs:
   build: # 这是作业的定义
@@ -10,25 +10,27 @@ jobs:
     steps:
       - checkout # 对应 actions/checkout@v4
 
-      - python/install-packages: # 对应 actions/setup-python@v4 和 Install dependencies
-          pkg-manager: pip
-          # 如果有 requirements.txt 文件，可以省略 args，它会自动查找
-          # 否则，需要在这里指定要安装的包
-          # 例如：args: "nuitka==2.7.10 pyside6==6.9.1 requests"
-          # 或者，为了清晰，可以拆分成多个 run 步骤
+      # 替代 python/install-packages:
       - run:
-          name: Install Nuitka and other dependencies
+          name: Set up Python and Install dependencies
           command: |
-            pip install --upgrade pip
+            # 1. 设置 Python 环境 (win/default executor 应该已经预装了 Python)
+            #    如果需要特定版本，可能需要使用 win/setup-python 或手动下载安装
+            #    这里假设 win/default 提供的 Python 版本满足要求
+            
+            # 2. 升级 pip
+            python -m pip install --upgrade pip
+            
+            # 3. 安装依赖
             pip install nuitka==2.7.10 pyside6==6.9.1 requests
+            
+            # 确保命令成功执行，PowerShell 中 $LASTEXITCODE 用于获取上一个命令的退出码
+            if ($LASTEXITCODE -ne 0) { exit 1 }
 
       - run:
           name: Build with Nuitka
-          # 注意：在 Windows 环境下，PowerShell 是默认 shell，可以直接使用 PowerShell 语法
-          # 如果需要使用 cmd.exe 或 bash.exe，可以在 run 步骤中指定 shell
           command: |
             nuitka --standalone --onefile --enable-plugin=pyside6 --windows-console-mode=disable --windows-icon-from-ico=icon.ico --include-data-files="app.exe=app.exe" --include-data-files="icon.ico=icon.ico" --lto=yes --assume-yes-for-downloads activation_ui.py
-            # 在 PowerShell 中，检查上一个命令的退出码可以使用 $LASTEXITCODE
             if ($LASTEXITCODE -ne 0) { exit 1 }
 
       - store_artifacts: # 对应 actions/upload-artifact@v4
@@ -43,4 +45,3 @@ workflows:
             branches:
               only:
                 - main # 只在 main 分支上触发
-            # 移除了 paths 过滤器，现在 main 分支的任何更改都会触发
