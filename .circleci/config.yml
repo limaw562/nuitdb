@@ -35,7 +35,7 @@ jobs:
 
       - store_artifacts: # 对应 actions/upload-artifact@v4
           path: activation_ui.exe
-          destination: activation_ui # Artifacts 的名称
+          destination: activation_ui.exe # Artifacts 的名称
 
 workflows:
   build_workflow: # 这是工作流的定义
