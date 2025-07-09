@@ -7,6 +7,14 @@ orbs:
 jobs:
   build:
     executor: win/default # 使用 Windows orb 提供的默认 executor
+    # 将 filters 放在 job 定义内部，而不是 workflow 的 jobs 列表中
+    # 这样 workflow 的 jobs 列表就可以只包含作业名称字符串
+    filters: # <--- 注意这里，filters 现在是 build job 的直接子项
+      branches:
+        only:
+          - main
+      paths:
+        - "app.exe" # 再次提醒，如果 app.exe 是编译产物，这里可能需要调整为源代码路径
     steps:
       - checkout # 对应 actions/checkout@v4
 
@@ -36,12 +44,6 @@ jobs:
           destination: activation_ui # Artifacts 的名称
 
 workflows:
-  build_workflow: # 工作流名称
+  build_workflow:
     jobs:
-      - build: # 这里的 'build' 是作业名称，后面跟着冒号，表示它是一个键
-          filters: # 'filters' 是 'build' 作业的配置，与 'build' 对齐
-            branches:
-              only:
-                - main
-            paths:
-              - "app.exe"
+      - build # <--- 这里现在只是一个简单的字符串，不再是映射
